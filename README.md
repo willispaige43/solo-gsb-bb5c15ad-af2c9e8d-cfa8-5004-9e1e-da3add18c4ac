@@ -118,6 +118,25 @@ curl -X POST http://localhost:8000/api/traces \
 
 多界面追迹继续使用修正后的有限方向做前向求交；提交（`POST /api/traces`）与查询（`GET /api/traces/{id}`、`GET /api/traces/{id}/segments/{seg_index}`）接口对同一追迹给出一致的有限分段结果。
 
+### 掠射（近平行）求交
+
+界面求交**不设固定的平行阈值**：只要分母 `d·n` 非零、交点参数 `t` 为有限值且满足前向自交阈值（`t > 1e-9`）、交点坐标有限，即使光线与界面几乎平行（如方向 `(1, 1e-13)` 射向界面 `y=1`，`d·n = 1e-13`）也返回该有限前向交点并继续后续折射分段；仅当**真正平行**（`d·n = 0`）、**交点在反方向**（`t ≤ 1e-9`）或**交点参数 / 坐标不可表示**（溢出为无穷或 NaN）时才记 `no_intersection`。观察线求交复用同一规则，掠射出射段的有效命中同样被记录。
+
+```bash
+# 方向 (1, 1e-13) 射向 y=1：分母 1e-13 非零，交点 (1e13, 1) 有限且在前方
+curl -X POST http://localhost:8000/api/traces \
+  -H "Content-Type: application/json" \
+  -d '{
+    "start": {"x": 0, "y": 0},
+    "direction": {"x": 1, "y": 1e-13},
+    "n_start": 1.0,
+    "interfaces": [
+      {"point": {"x": 0, "y": 1}, "normal": {"x": 0, "y": 1}, "n_next": 1.5}
+    ]
+  }'
+# status = "completed"，第 0 段 hit_point = {"x": 10000000000000.0, "y": 1.0}
+```
+
 ## 追迹结果对比
 
 `POST /api/traces/compare` 接收两个已保存追迹编号与非负的位置/方向容差，按 `seg_index` 对齐两条追迹的状态与分段并返回差异。该接口为**只读比较**，不修改任何已保存记录。

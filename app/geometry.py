@@ -10,7 +10,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-EPS = 1e-12
+EPS = 1e-12  # 零向量长度判定阈值（normalize）
 T_MIN = 1e-9  # 交点参数 t 必须大于该值，避免自相交
 
 AIM_DEV_TOL = 1e-6  # 目标偏差容差：|偏差| 不大于该值即视为命中
@@ -58,14 +58,26 @@ def _intersect_line(
     point: tuple[float, float],
     normal: tuple[float, float],
 ) -> tuple[float, float] | None:
-    """光线与界面直线求交，返回前向交点；平行或交点在身后则返回 None。"""
+    """光线与界面直线求交，返回前向交点；平行、反向或不可表示时返回 None。
+
+    平行判定只看分母 denom = d·n 是否为零，不设固定阈值：掠射（denom 非零
+    但极小，如 1e-13）时交点参数 t 虽大，只要 t 为有限值、满足前向自交阈值
+    （t > T_MIN）且交点坐标有限，仍返回该有限前向交点；denom 为零（真正
+    平行）、t 不大于 T_MIN（反向或自交）、或 t / 交点坐标不可表示（无穷或
+    NaN）时返回 None。
+    """
     denom = _dot(direction, normal)
-    if abs(denom) < EPS:
-        return None  # 光线与界面平行
+    if denom == 0.0:
+        return None  # 光线与界面真正平行（分母为零）
     t = _dot((point[0] - origin[0], point[1] - origin[1]), normal) / denom
+    if not math.isfinite(t):
+        return None  # 交点参数不可表示（溢出为无穷或 NaN）
     if t <= T_MIN:
         return None  # 交点不在前方
-    return (origin[0] + t * direction[0], origin[1] + t * direction[1])
+    hit = (origin[0] + t * direction[0], origin[1] + t * direction[1])
+    if not (math.isfinite(hit[0]) and math.isfinite(hit[1])):
+        return None  # 交点坐标不可表示（溢出为无穷或 NaN）
+    return hit
 
 
 def _refracted_tangential(
@@ -260,7 +272,8 @@ def observation_intersection(
 ) -> tuple[float, float] | None:
     """取完成追迹后的出射段（最后一段），求其与观察线的前向交点。
 
-    平行（denom≈0）或交点在光线反方向（t<=0）时返回 None。
+    平行（denom 为零）、交点在光线反方向或交点不可表示时返回 None
+    （与 _intersect_line 同一判定规则）。
     """
     final = segments[-1]
     return _intersect_line(final.origin, final.direction, point, normalize(normal))
