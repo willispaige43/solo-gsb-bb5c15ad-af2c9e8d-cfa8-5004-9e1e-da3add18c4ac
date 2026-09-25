@@ -118,6 +118,26 @@ curl -X POST http://localhost:8000/api/traces \
 
 多界面追迹继续使用修正后的有限方向做前向求交；提交（`POST /api/traces`）与查询（`GET /api/traces/{id}`、`GET /api/traces/{id}/segments/{seg_index}`）接口对同一追迹给出一致的有限分段结果。
 
+### 近掠射求交示例
+
+前向求交不设固定的平行容差：界面方程分母（方向与界面法线的点积）**非零即不平行**，直接求解。因此近掠射光线（如从 `(0,0)` 沿 `(1,1e-13)` 射向 `y=1` 的界面，分母为 `1e-13`）在 `(1e13, 1)` 处的有限前向交点会被正常计算，并继续完成后续界面折射；不会因固定的 `1e-12` 平行阈值被误报为 `no_intersection`。真正平行（分母恰为 0）、交点在光线反方向（`t ≤ 0`）或交点参数 / 坐标非有限（不可表示）时仍返回无交点。
+
+```bash
+curl -X POST http://localhost:8000/api/traces \
+  -H "Content-Type: application/json" \
+  -d '{
+    "start": {"x": 0, "y": 0},
+    "direction": {"x": 1, "y": 1e-13},
+    "n_start": 1.0,
+    "interfaces": [
+      {"point": {"x": 0, "y": 1}, "normal": {"x": 0, "y": 1}, "n_next": 1.5}
+    ]
+  }'
+# status = "completed"，segments[0].hit_point = {"x": 1e13, "y": 1.0}
+```
+
+各评估接口（光束、功率、波前、瞄准、焦点、标定、多波长等）复用同一前向求交：近掠射出射段与观察线存在有限前向交点时也会记录为有效命中。
+
 ## 追迹结果对比
 
 `POST /api/traces/compare` 接收两个已保存追迹编号与非负的位置/方向容差，按 `seg_index` 对齐两条追迹的状态与分段并返回差异。该接口为**只读比较**，不修改任何已保存记录。

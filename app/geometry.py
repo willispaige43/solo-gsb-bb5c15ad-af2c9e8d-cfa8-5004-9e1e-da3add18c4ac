@@ -58,14 +58,28 @@ def _intersect_line(
     point: tuple[float, float],
     normal: tuple[float, float],
 ) -> tuple[float, float] | None:
-    """光线与界面直线求交，返回前向交点；平行或交点在身后则返回 None。"""
+    """光线与界面直线求交，返回前向交点；平行、交点在身后或不可表示则返回 None。
+
+    平行判定不设固定的 |denom| 容差：denom 是归一化方向与单位法线的余弦，
+    非零即说明光线与界面不平行，直接解直线方程。若以固定小阈值（如 1e-12）
+    截断，近掠射光线（方向 (1, 1e-13) 打向 y=1 的界面，denom=1e-13）会被
+    误判为平行，尽管它在 (1e13, 1) 处有有限的前向交点。
+
+    有效交点须同时满足：denom 恰非零（真正平行时为 0）、交点参数 t 有限且
+    t > T_MIN（前向，避开起点处自交）、交点坐标有限（t·方向溢出为 inf 时
+    交点不可表示）；其余情形（真正平行、反向 t<=T_MIN、t 或坐标非有限）
+    返回 None。
+    """
     denom = _dot(direction, normal)
-    if abs(denom) < EPS:
-        return None  # 光线与界面平行
+    if denom == 0.0:
+        return None  # 光线与界面真正平行
     t = _dot((point[0] - origin[0], point[1] - origin[1]), normal) / denom
-    if t <= T_MIN:
-        return None  # 交点不在前方
-    return (origin[0] + t * direction[0], origin[1] + t * direction[1])
+    if not math.isfinite(t) or t <= T_MIN:
+        return None  # 交点不可表示，或不在前方
+    hit = (origin[0] + t * direction[0], origin[1] + t * direction[1])
+    if not math.isfinite(hit[0]) or not math.isfinite(hit[1]):
+        return None  # 交点坐标不可表示（如 t·方向溢出）
+    return hit
 
 
 def _refracted_tangential(
